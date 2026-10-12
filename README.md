@@ -1,0 +1,137 @@
+请将 https://github.com/KSwordDEV/MCP 提供的 KSword MCP 安装并注册到你当前使用的 MCP 服务列表中。安装前先检查本机是否为 Windows，并依次询问我：①是否同时从 https://github.com/KSwordDEV/KSword/releases 下载 KSword；②调用 MCP 时，如果 KSword 未运行，是自动启动还是直接返回失败；③只有选择自动启动时，再询问是否使用管理员权限启动 KSword。不要替我默认选择下载、自动启动或管理员权限。根据我的回答，从 MCP 仓库获取脚本，建立独立 Python 环境并安装 requirements.txt，保留已有的其他 MCP 配置。若我同意下载，使用官方 Release 的主程序包，避开仅符号/PDB 包，并核对下载身份与提供的校验值；确认该构建支持 MCP，不能把旧发行版当作已支持。如果不下载或发行版尚不支持 MCP，请询问现有兼容 Ksword5.1.exe 的完整路径或报告缺少兼容构建，不编造安装成功。按目标 agent 的原生配置格式注册名为 ksword 的 stdio MCP：command 指向独立环境的 Python，args 包含 server.py、--ksword-exe 和主程序完整路径，以及 --startup-policy fail 或 auto；管理员自动启动才添加 --startup-elevated。管理员 KSword 要求 MCP 客户端与 agent 具有匹配的管理员权限；普通启动要求普通权限客户端，权限不匹配时说明需要用户调整客户端启动方式，不绕过 SID、会话或完整性级别校验。确认 stdio 握手和工具发现；用户允许启动且有兼容程序时，再用 hello、pages、snapshot 做只读连接检查。已有实例未启用 MCP 时，请提示我在“设置 → MCP”本次启用，不擅自关闭、重启或另开它。不要执行驱动装卸、结束进程、内存写入或其他系统修改；最后报告安装位置、实际 MCP 配置、我选择的启动与权限策略、验证结果及仍需用户处理的事项。
+
+# KSword Qt 对象桥 MCP
+
+这个 sidecar 使用 [官方 MCP Python v1 SDK](https://github.com/modelcontextprotocol/python-sdk/tree/v1.26.0)，以 stdio 向 MCP 客户端提供 11 个工具，再通过本机命名管道操作 KSword 的 Qt 控件。GUI 与 sidecar 是独立进程。
+
+## 启动
+
+需要 Windows、Python 3.10 及以上和匹配当前源码构建的 KSword 主程序。先在仓库根目录安装依赖：
+
+```powershell
+python -m pip install -r requirements.txt
+```
+
+可从主程序顶部“设置 → MCP”即时启用或停止对象桥；默认关闭。“随程序启动”点击设置窗口底部“应用”后保存，下次启动生效。“取消”放弃待保存偏好和路径，本次启停是即时操作。也可用 `--mcp` 仅对本次启动启用桥。如果主程序已有运行实例，该参数不会改变旧实例的状态，应直接在旧实例的 MCP 设置页启用，或先正常关闭旧实例再启动：
+
+```powershell
+$kswordProcess = Start-Process -FilePath 'C:/path/to/Release/Ksword5.1.exe' -ArgumentList '--mcp' -PassThru
+$kswordProcess.Id
+```
+
+以控制台输出的实际 GUI PID 为准。连接前核对运行进程，避免填入 Launcher 或已退出进程的 PID。手动运行 sidecar 的命令如下；它会等待标准输入中的 MCP 请求，通常应由 MCP 客户端代为启动：
+
+```powershell
+python server.py --pid 12345
+```
+
+固定 PID 模式下，GUI 重启后需要更新参数。推荐改用 --ksword-exe 按明确的完整映像路径寻找当前实例；默认不自动启动，用户明确选择 --startup-policy auto 后，首次工具调用才会尝试启动。sidecar 不下载主程序、不安装驱动，也不修改 KSword 设置。
+
+MCP 设置页显示实际监听状态、当前 PID 和命名管道，可填写 Python 命令与 sidecar 脚本路径，并预览/复制下面两种客户端配置。预览使用当前输入，路径在点击“应用”后保存。主程序按标准 Release 位置自动寻找仓库中的 `tools/ksword_mcp/server.py`；安装位置不同或发行目录缺少 sidecar 时可手动选择。复制前会检查命令非空和脚本存在，但不会验证或安装 Python 依赖，也不会修改客户端全局配置。
+
+“设置 → MCP → 操作日志”显示最近1000条服务、连接、请求和操作派发记录，支持共享编辑器的搜索、复制、导出以及即时清空。日志在当前主程序生命周期内保留，重开设置或启停 MCP 不会丢失，退出后不写入磁盘。记录包含时间、客户端 PID、白名单方法、请求 UUID、调用回执和机器错误码；输入值、读取结果、未知方法原文和非 UUID 请求身份不进入日志。成功的操作状态轮询不重复刷屏。`dispatched` 仍只表示控件调用派发，不能作为业务完成依据。
+
+## Agent 安装与启动策略
+
+README 第一段和 `agent_install_prompt.txt` 是可直接交给 agent 的安装提示词。agent 必须先询问是否下载 KSword、未运行时的处理策略，以及自动启动时是否使用管理员权限，再写入当前 agent 的 MCP 配置；不能用示例中的默认值代替用户回答。
+
+推荐使用程序路径模式，避免每次重启修改 PID：
+
+```powershell
+python server.py --ksword-exe "C:/path/to/Release/Ksword5.1.exe" --startup-policy fail
+python server.py --ksword-exe "C:/path/to/Release/Ksword5.1.exe" --startup-policy auto
+python server.py --ksword-exe "C:/path/to/Release/Ksword5.1.exe" --startup-policy auto --startup-elevated
+```
+
+- `fail`：默认策略，主程序未运行时返回 `ksword_not_running`，不启动任何进程。
+- `auto`：只有工具调用发生后才启动；stdio 初始化和工具发现不启动主程序。默认启动等待30秒，可用 `--startup-timeout` 调整，最大120秒。
+- `--startup-elevated`：仅适用于 auto；要求 agent/MCP 客户端本身已具备匹配的管理员权限。脚本不代答 UAC，也不以提权代理绕过 GUI 的准入校验。
+- 普通 auto 使用 `--mcp-no-auto-elevation` 单次覆盖主程序保存的自动申请管理员选项，不改 JSON；需要包含此开关的当前 MCP 构建。管理员客户端不能悄悄将“普通启动”变成管理员启动，会返回 `normal_client_required`。
+- 只匹配指定 exe 的完整路径，并复核用户、会话和完整性级别；已有实例未启用 MCP 时返回 `mcp_not_enabled`，不关闭或重启它；多个可用实例时要求改用 `--pid` 明确选择。
+- 主程序退出后再次调用会重新发现 PID；业务请求只发送一次，失败或超时不自动重试。auto 模式的工具声明会反映可能启动 GUI 的副作用。
+
+主程序可从 [官方 Releases](https://github.com/KSwordDEV/KSword/releases) 获取。agent 应检查候选发行包是否已经包含 MCP 支持，选择主程序包而非仅 PDB 的附件。当前下载地址存在不等于当前公开版本已经支持这些新开关；若尚无兼容发行版，应报告此限制并请求已有兼容构建，不能宣称已连接。
+
+独立发布仓库根目录就是这些脚本所在目录；主仓库内仍位于 `tools/ksword_mcp/`。安装到独立目录后，用该目录的 `requirements.txt` 创建虚拟环境，客户端 command 使用虚拟环境 Python 的完整路径，args 使用已安装 `server.py` 的完整路径。
+
+## 客户端配置示例
+
+接受 `mcpServers` 配置的客户端可添加以下条目。将 Python 路径、脚本路径与 KSword 路径替换为本机实际值，并填入用户选择的启动策略；这只是配置示例，本工具不会改用户全局配置：
+
+```json
+{
+  "mcpServers": {
+    "ksword": {
+      "command": "python",
+      "args": [
+        "C:/path/to/MCP/server.py",
+        "--ksword-exe",
+        "C:/path/to/Release/Ksword5.1.exe",
+        "--startup-policy",
+        "fail"
+      ]
+    }
+  }
+}
+```
+
+Codex 的对应 [TOML 配置](https://developers.openai.com/codex/mcp/)示例（请放进需要启用此桥的配置文件）：
+
+```toml
+[mcp_servers.ksword]
+command = "python"
+args = ["C:/path/to/MCP/server.py", "--ksword-exe", "C:/path/to/Release/Ksword5.1.exe", "--startup-policy", "fail"]
+```
+
+如果 MCP 客户端找不到 `python`，将 `command` 换成安装了上述依赖的 Python 可执行文件完整路径。GUI 和 sidecar 必须满足桥的同用户、同会话及完整性级别准入条件；管理员 GUI 需要在匹配权限的可信客户端中启动 sidecar。
+
+## 工具与操作顺序
+
+| 工具 | 用途 |
+| --- | --- |
+| `ksword_hello` | 读取桥版本、PID 和能力说明 |
+| `ksword_pages` | 列出页面和懒加载状态 |
+| `ksword_open_page(page_id)` | 通过原有导航打开页面并初始化内容 |
+| `ksword_snapshot(page_id?, root_id?, max_nodes?, depth?)` | 获取有界 Qt 控件树、支持动作与可用状态 |
+| `ksword_action(object_id, action?, confirmed?)` | `press`、`toggle` 或 `show_menu` |
+| `ksword_set_field(object_id, value, submit?, confirmed?)` | 模拟支持控件的用户编辑；可请求原有提交动作 |
+| `ksword_read_table(object_id, row_start?, row_count?, column_start?, column_count?, parent_rows?)` | 获取模型切片、表头与 revision |
+| `ksword_select_row(object_id, row, revision, parent_rows?, confirmed?)` | 仅在模型 revision 相符时选中对应行 |
+| `ksword_read_text(object_id, offset?, length?)` | 按 Qt UTF-16 单位读取有界文本片段 |
+| `ksword_read_custom(object_id, options?)` | 读取主程序预注册的特殊控件只读适配器 |
+| `ksword_operation_status(operation_id)` | 查询控件调用调度状态 |
+
+先调用 `ksword_pages`、`ksword_open_page` 和 `ksword_snapshot` 获取当前对象 ID，之后读取或操作对应控件。对象 ID 是本次进程中的不透明身份，控件销毁后失效；再次创建的控件应重新取 snapshot。树模型用 `parent_rows` 指定父节点路径，选行时同时传入最近一次 `read_table` 返回的 revision。
+
+`action`、`set_field` 和 `select_row` 必须显式传 `confirmed=true`，否则返回 MCP 工具错误。参数先按工具 JSON schema 校验，字符串 `"true"` 或 `"{}"` 不会被转换成布尔确认或对象选项；未知顶层参数会被拒绝。原有业务确认弹窗仍然保留，需按 GUI 正常流程处理。这个确认参数表示调用方已授权当前控件动作，不会绕过 KSword 的业务校验。
+
+回执 `status=accepted` 以及 operation 状态 `queued`、`dispatching`、`dispatched`、`failed` 只描述控件调用。`dispatched` 表示完成了控件方法调用，后台任务可能仍在执行，也可能正在等待业务弹窗。应另行读取对应表格、文本或页面状态判断业务结果。
+
+特殊控件通过主程序预注册的只读适配器扩展。`ksword_read_custom` 只接收对象 ID 和 JSON 对象选项，GUI 按对象实际 Qt 类匹配适配器；客户端不能指定类名、调用任意方法或执行反射。新增只读控件支持只需在主程序注册适配器，无需修改中央协议或 sidecar。
+
+目前 `HexCanvas` 适配器接受 `options={"address":"0x1000","length":16}`，其中地址可省略，默认使用光标地址，长度为 1 至 256 字节。回执包含画布当前已加载字节、地址和选区状态；它不会主动从进程读取内存或写入内容。读取其他特殊控件时，应先查看 snapshot 中支持的动作，再按对应适配器选项调用。
+
+自绘画布、专用编辑器和特殊业务操作可能需要额外适配。当前通用桥及已注册适配器覆盖其支持的 Qt 控件语义，不能把工具存在或点击已调度解释为全部产品功能已经验收。
+
+## 本地边界与超时
+
+- 唯一本地端点为 `\\.\pipe\ksword-mcp-{pid}`；GUI 按 MCP 设置页的本次启停、已保存自动启动偏好或显式 `--mcp` 参数监听，退出时关闭。不会创建网络端口或永久服务。
+- 停止立即断开当前连接，并使旧对象 ID、模型 revision 与操作回执失效；再次启用会创建新的桥实例。客户端需重新获取 snapshot，不能重用停止前的 ID。通过 MCP 触发停止时，当前连接也可能在停止回执送达前断开，不应自动重试动作。
+- sidecar 用 `GetNamedPipeServerProcessId` 核验服务器进程与 `--pid` 一致，GUI 校验连接方身份及会话/权限边界。
+- 每个工具调用独立连接，一次发送、一帧回执。动作从不自动重试；超时可能发生在 GUI 已接受动作之后，调用方应先检查状态再决定下一步。
+- 请求上限 64 KiB，回执上限 2 MiB，包括末尾换行。UTF-8、JSON、schemaVersion、状态与 UUID 均严格验证。单次表格最多读取 2048 个单元格；GUI 另外限制每格 1024 个 UTF-16 单位、整片文本 131072 个单位，截断状态由原回执标示。
+- 默认连接 2 秒、写入 2 秒、完整读取 10 秒。读写使用 OVERLAPPED + 有限事件等待；超时调用 `CancelIoEx` 并回收句柄。特殊延迟取消期间保留缓冲区直到内核完成，避免释放仍在使用的内存。
+- 最多四个仍在执行的管道调用；额外 MCP 请求只排队一秒，随后返回 `bridge_busy`。调用方取消不会提前释放仍在执行的原生 I/O 并发槽。
+- 可用 `--connect-timeout`、`--write-timeout`、`--read-timeout` 调整每阶段预算，每项必须大于 0 且不超过 60 秒。多次读写分片共用该阶段截止时刻。
+
+## 验证
+
+从仓库根目录运行：
+
+```powershell
+python -m unittest discover -s . -p "test_*.py" -v
+```
+
+回归验证帧预算、严格 JSON、ID 配对、无动作重试、参数与确认边界；Windows 回归创建测试进程自己的临时命名管道，检查分片读写、三个阶段的有限超时、服务端身份校验和取消后的句柄回收。官方 `ClientSession` 还会启动真实 sidecar 子进程，验证 stdio 握手、`list_tools` 和 `isError` 回传。
+
+这组测试不会启动产品 GUI 或加载驱动。真实 Qt 对象桥夹具的跨进程测试由仓库独立测试入口负责；产品主程序、驱动和全部业务页面的验收需要分别进行。
