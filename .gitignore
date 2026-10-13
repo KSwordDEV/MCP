@@ -1,5 +1,6 @@
-.venv/
+# 本目录回归只保留源码，不提交 Python 缓存。
 __pycache__/
-*.py[cod]
-*.log
-.env
+*.egg-info/
+build/
+dist/
+node_modules/
