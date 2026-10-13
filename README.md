@@ -1,3 +1,5 @@
+## 使用 AI Agent 自动安装
+
 ```text
 请在你当前使用的 MCP 服务列表中安装 KSword MCP（https://github.com/KSwordDEV/MCP）：
 1. 先询问我是否同时下载 KSword；未运行时自动启动还是返回失败；若自动启动，是否使用管理员权限。
